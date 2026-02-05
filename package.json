@@ -1,0 +1,22 @@
+{
+  "name": "openclaw-security-standard",
+  "version": "1.0.0",
+  "description": "OpenClaw 安全评估标准 (OCSS) - 用于评估 OpenClaw 部署安全性的标准化框架",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openclaw/ocss.git"
+  },
+  "keywords": [
+    "openclaw",
+    "security",
+    "assessment",
+    "standard",
+    "framework"
+  ],
+  "author": "OpenClaw Community",
+  "license": "MIT"
+}

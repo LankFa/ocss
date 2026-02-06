@@ -187,8 +187,8 @@ else
 fi
 
 echo " 评分: $CONFIG_MGMT_SCORE/5 - $CONFIG_DESC"
-CONFIG_MGMT_RATIO=$(echo "scale=4; $CONFIG_MGMT_SCORE / 5" | bc -l)
-CONFIG_WEIGHTED=$(echo "scale=4; $CONFIG_MGMT_RATIO * 0.0857" | bc -l)
+CONFIG_RATIO=$(echo "scale=4; $CONFIG_RATIO / 5" | bc -l)
+CONFIG_WEIGHTED=$(echo "scale=4; $CONFIG_RATIO * 0.0857" | bc -l)
 echo " 加权分数: $CONFIG_WEIGHTED"
 total_score=$(echo "$total_score + $CONFIG_WEIGHTED" | bc -l)
 echo ""

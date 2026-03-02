@@ -11,7 +11,7 @@ DATE=$(date)
 echo "评估时间: $DATE"
 echo ""
 
-# 初始化总分
+# 初始化总分（更新为105分制）
 total_score=0
 
 # 1. 网络与访问控制评估
@@ -36,63 +36,71 @@ fi
 
 echo " 评分: $NETWORK_SCORE/5 - $NETWORK_DESC"
 NETWORK_RATIO=$(echo "scale=4; $NETWORK_SCORE / 5" | bc -l)
-NETWORK_WEIGHTED=$(echo "scale=4; $NETWORK_RATIO * 0.1714" | bc -l)
+NETWORK_WEIGHTED=$(echo "scale=4; $NETWORK_RATIO * 0.20" | bc -l)  # 调整权重以适应新增检查项
 echo " 加权分数: $NETWORK_WEIGHTED"
 total_score=$(echo "$total_score + $NETWORK_WEIGHTED" | bc -l)
 echo ""
 
 # 检查本地回环接口连通性 (新增功能 - OCSS v1.1)
 echo "1.1. 本地回环接口连通性检查..."
-
-# 检查iptables INPUT链对本地回环的设置
-if command -v iptables >/dev/null 2>&1; then
-    local_loopback_rule=$(iptables -L INPUT -v -n | grep -E "127\.0\.0\.1|0\.0\.0\.0/0.*lo")
-    if [[ -z "$local_loopback_rule" ]]; then
-        echo " ❌ 警告: 未找到本地回环接口的显式允许规则"
-        loopback_score=0
+check_loopback_connectivity() {
+    # 检查iptables INPUT链对本地回环的设置
+    if command -v iptables >/dev/null 2>&1; then
+        local_loopback_rule=$(iptables -L INPUT -v -n | grep -E "127\.0\.0\.1|0\.0\.0\.0/0.*lo")
+        if [[ -z "$local_loopback_rule" ]]; then
+            echo " ❌ 警告: 未找到本地回环接口的显式允许规则"
+            local loopback_score=0
+        else
+            echo " ✅ 找到本地回环接口规则"
+            local loopback_score=1
+        fi
+        
+        # 检查默认策略是否过于严格
+        default_policy=$(iptables -L INPUT -v -n | head -n 1 | grep "policy DROP")
+        if [[ -n "$default_policy" ]]; then
+            # 进一步检查是否允许本地回环
+            has_local_allow=$(iptables -L INPUT -v -n | grep -E "127\.0\.0\.1.*ACCEPT")
+            if [[ -z "$has_local_allow" ]]; then
+                echo " ❌ 严重: 默认DROP策略但不允许本地回环通信"
+                local loopback_score=0
+            fi
+        fi
     else
-        echo " ✅ 找到本地回环接口规则"
-        loopback_score=0.0476
+        echo " ℹ️  iptables命令不可用，跳过本地回环检查"
+        local loopback_score=0.5
     fi
     
-    # 检查默认策略是否过于严格
-    default_policy=$(iptables -L INPUT -v -n | head -n 1 | grep "policy DROP")
-    if [[ -n "$default_policy" ]]; then
-        # 进一步检查是否允许本地回环
-        has_local_allow=$(iptables -L INPUT -v -n | grep -E "127\.0\.0\.1.*ACCEPT")
-        if [[ -z "$has_local_allow" ]]; then
-            echo " ❌ 严重: 默认DROP策略但不允许本地回环通信"
-            loopback_score=0
-        fi
-    fi
-else
-    echo " ℹ️  iptables命令不可用，跳过本地回环检查"
-    loopback_score=0.0238
-fi
+    echo " 本地回环检查得分: $loopback_score"
+    echo " 加权分数: $loopback_score"  # 回环检查权重为1
+    total_score=$(echo "$total_score + $loopback_score" | bc -l)
+}
 
-echo " 本地回环检查得分: $loopback_score"
-total_score=$(echo "$total_score + $loopback_score" | bc -l)
+check_loopback_connectivity
 echo ""
 
 # 检查关键服务端口可达性 (新增功能 - OCSS v1.1)
 echo "1.2. 关键服务端口可达性检查..."
-
-# 检查OpenClaw gateway端口
-if command -v nc >/dev/null 2>&1; then
-    if nc -z -w 5 127.0.0.1 18789; then
-        echo " ✅ OpenClaw gateway端口(18789)可访问"
-        port_score=0.0476
+check_critical_ports() {
+    # 检查OpenClaw gateway端口
+    if command -v nc >/dev/null 2>&1; then
+        if nc -z -w 5 127.0.0.1 18789; then
+            echo " ✅ OpenClaw gateway端口(18789)可访问"
+            local port_score=1
+        else
+            echo " ❌ 警告: OpenClaw gateway端口(18789)不可访问"
+            local port_score=0
+        fi
     else
-        echo " ❌ 警告: OpenClaw gateway端口(18789)不可访问"
-        port_score=0
+        echo " ℹ️  nc命令不可用，跳过端口连通性测试"
+        local port_score=0.5
     fi
-else
-    echo " ℹ️  nc命令不可用，跳过端口连通性测试"
-    port_score=0.0238
-fi
+    
+    echo " 关键端口检查得分: $port_score"
+    echo " 加权分数: $port_score"  # 端口检查权重为1
+    total_score=$(echo "$total_score + $port_score" | bc -l)
+}
 
-echo " 关键端口检查得分: $port_score"
-total_score=$(echo "$total_score + $port_score" | bc -l)
+check_critical_ports
 echo ""
 
 # 2. 身份验证与授权评估
@@ -121,7 +129,7 @@ fi
 
 echo " 评分: $AUTH_SCORE/5 - $AUTH_DESC"
 AUTH_RATIO=$(echo "scale=4; $AUTH_SCORE / 5" | bc -l)
-AUTH_WEIGHTED=$(echo "scale=4; $AUTH_RATIO * 0.2143" | bc -l)
+AUTH_WEIGHTED=$(echo "scale=4; $AUTH_RATIO * 0.25" | bc -l)
 echo " 加权分数: $AUTH_WEIGHTED"
 total_score=$(echo "$total_score + $AUTH_WEIGHTED" | bc -l)
 echo ""
@@ -146,7 +154,7 @@ fi
 
 echo " 评分: $DATA_PROTECTION_SCORE/5 - $DATA_DESC"
 DATA_RATIO=$(echo "scale=4; $DATA_PROTECTION_SCORE / 5" | bc -l)
-DATA_WEIGHTED=$(echo "scale=4; $DATA_RATIO * 0.1714" | bc -l)
+DATA_WEIGHTED=$(echo "scale=4; $DATA_RATIO * 0.20" | bc -l)
 echo " 加权分数: $DATA_WEIGHTED"
 total_score=$(echo "$total_score + $DATA_WEIGHTED" | bc -l)
 echo ""
@@ -169,7 +177,7 @@ fi
 
 echo " 评分: $LOG_SCORE/5 - $LOG_DESC"
 LOG_RATIO=$(echo "scale=4; $LOG_SCORE / 5" | bc -l)
-LOG_WEIGHTED=$(echo "scale=4; $LOG_RATIO * 0.1286" | bc -l)
+LOG_WEIGHTED=$(echo "scale=4; $LOG_RATIO * 0.15" | bc -l)
 echo " 加权分数: $LOG_WEIGHTED"
 total_score=$(echo "$total_score + $LOG_WEIGHTED" | bc -l)
 echo ""
@@ -187,8 +195,8 @@ else
 fi
 
 echo " 评分: $CONFIG_MGMT_SCORE/5 - $CONFIG_DESC"
-CONFIG_MGMT_RATIO=$(echo "scale=4; $CONFIG_MGMT_SCORE / 5" | bc -l)
-CONFIG_WEIGHTED=$(echo "scale=4; $CONFIG_MGMT_RATIO * 0.0857" | bc -l)
+CONFIG_RATIO=$(echo "scale=4; $CONFIG_MGMT_SCORE / 5" | bc -l)
+CONFIG_WEIGHTED=$(echo "scale=4; $CONFIG_RATIO * 0.10" | bc -l)
 echo " 加权分数: $CONFIG_WEIGHTED"
 total_score=$(echo "$total_score + $CONFIG_WEIGHTED" | bc -l)
 echo ""
@@ -207,13 +215,13 @@ fi
 
 echo " 评分: $EMERGENCY_SCORE/5 - $EMERGENCY_DESC"
 EMERGENCY_RATIO=$(echo "scale=4; $EMERGENCY_SCORE / 5" | bc -l)
-EMERGENCY_WEIGHTED=$(echo "scale=4; $EMERGENCY_RATIO * 0.0429" | bc -l)
+EMERGENCY_WEIGHTED=$(echo "scale=4; $EMERGENCY_RATIO * 0.05" | bc -l)
 echo " 加权分数: $EMERGENCY_WEIGHTED"
 total_score=$(echo "$total_score + $EMERGENCY_WEIGHTED" | bc -l)
 echo ""
 
-# 计算总分 (权重总和为1，乘以100得到百分比)
-TOTAL_PERCENTAGE=$(echo "scale=4; $total_score * 100" | bc -l)
+# 计算总分 (现在是105分制)
+TOTAL_PERCENTAGE=$(echo "$total_score * 100" | bc -l)
 
 echo "==========================================="
 echo "总体评估结果: $TOTAL_PERCENTAGE%"
